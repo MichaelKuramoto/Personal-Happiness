@@ -1,0 +1,9 @@
+{
+  "env": {
+    "BASEBALL_STATS_SENDER_EMAIL": "roykuramoto@gmail.com",
+    "BASEBALL_STATS_SENDER_PASSWORD": "HelpMichael2026$",
+    "BASEBALL_STATS_RECIPIENT_EMAIL": "michaelkuramoto@gmail.com",
+    "BASEBALL_STATS_TIMEZONE": "PST",
+    "BASEBALL_STATS_SCHEDULE_HOUR": "5"
+  }
+}
