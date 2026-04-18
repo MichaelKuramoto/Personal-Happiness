@@ -6,98 +6,72 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
 import sys
-import json
 
 SENDER_EMAIL = os.environ.get('BASEBALL_STATS_SENDER_EMAIL')
 SENDER_PASSWORD = os.environ.get('BASEBALL_STATS_SENDER_PASSWORD')
 RECIPIENT_EMAIL = os.environ.get('BASEBALL_STATS_RECIPIENT_EMAIL')
 
-# MLB StatsAPI - official, free, no blocking
-MLB_API = "https://statsapi.mlb.com/api/v1"
+# Known player IDs
+PLAYER_IDS = {
+    'Shohei Ohtani': 660271,
+    'Aaron Judge': 592450
+}
 
 def get_yesterday_date():
     """Get yesterday's date in YYYY-MM-DD format"""
     yesterday = datetime.now() - timedelta(days=1)
     return yesterday.strftime('%Y-%m-%d')
 
-def get_player_id(player_name):
-    """Get MLB player ID by name"""
+def get_player_stats_for_date(player_name, player_id, date_str):
+    """Get player stats for a specific date using game data"""
     try:
-        url = f"{MLB_API}/people/search?names={player_name}"
+        # Get games for the date
+        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
-        data = response.json()
+        games = response.json()
 
-        if data.get('people'):
-            return data['people'][0]['id']
-        return None
-    except Exception as e:
-        print(f"Error finding player {player_name}: {str(e)}")
-        return None
+        stats_text = f"=== {player_name.upper()} ({date_str}) ===\n\n"
+        found = False
 
-def get_player_stats(player_name, stat_type='season'):
-    """Get player stats from MLB API"""
-    try:
-        player_id = get_player_id(player_name)
-        if not player_id:
-            return f"Could not find {player_name}"
+        for game in games:
+            for team_key in ['away', 'home']:
+                team = game.get(team_key, {})
+                for player in team.get('players', {}).values():
+                    if player.get('person', {}).get('id') == player_id:
+                        found = True
+                        stats = player.get('stats', {})
 
-        # Get player info
-        url = f"{MLB_API}/people/{player_id}?hydrate=stats(group=[hitting,pitching])"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+                        # Batting stats
+                        if 'batting' in stats:
+                            batting = stats['batting']
+                            stats_text += "Batting:\n"
+                            stats_text += f"  At Bats: {batting.get('atBats', 'N/A')}\n"
+                            stats_text += f"  Hits: {batting.get('hits', 'N/A')}\n"
+                            stats_text += f"  Doubles: {batting.get('doubles', 'N/A')}\n"
+                            stats_text += f"  Home Runs: {batting.get('homeRuns', 'N/A')}\n"
+                            stats_text += f"  RBIs: {batting.get('rbi', 'N/A')}\n"
+                            stats_text += f"  Strikeouts: {batting.get('strikeOuts', 'N/A')}\n"
+                            stats_text += f"  AVG: {batting.get('avg', 'N/A')}\n\n"
 
-        player = data.get('people', [{}])[0]
-        stats_text = f"=== {player.get('fullName', player_name).upper()} ===\n\n"
+                        # Pitching stats
+                        if 'pitching' in stats:
+                            pitching = stats['pitching']
+                            stats_text += "Pitching:\n"
+                            stats_text += f"  Innings Pitched: {pitching.get('inningsPitched', 'N/A')}\n"
+                            stats_text += f"  Wins: {pitching.get('wins', 'N/A')}\n"
+                            stats_text += f"  Losses: {pitching.get('losses', 'N/A')}\n"
+                            stats_text += f"  ERA: {pitching.get('era', 'N/A')}\n"
+                            stats_text += f"  Strikeouts: {pitching.get('strikeOuts', 'N/A')}\n"
+                            stats_text += f"  Pitches: {pitching.get('numberOfPitches', 'N/A')}\n\n"
 
-        # Extract stats
-        if 'stats' in player:
-            for stat_group in player['stats']:
-                group_type = stat_group.get('group', {}).get('displayName', '')
-                stat_data = stat_group.get('stats', {})
+        if not found:
+            stats_text = f"No game found for {player_name} on {date_str}"
 
-                if group_type:
-                    stats_text += f"{group_type}:\n"
-
-                # Format key stats
-                if group_type == 'hitting':
-                    stats_text += format_hitting_stats(stat_data)
-                elif group_type == 'pitching':
-                    stats_text += format_pitching_stats(stat_data)
-
-                stats_text += "\n"
-
-        return stats_text if stats_text != f"=== {player.get('fullName', player_name).upper()} ===\n\n" else f"No stats available for {player_name}"
+        return stats_text
 
     except Exception as e:
         return f"Error fetching {player_name} stats: {str(e)}"
-
-def format_hitting_stats(stats):
-    """Format hitting stats"""
-    text = ""
-    key_stats = ['gamesPlayed', 'atBats', 'hits', 'doubles', 'triples', 'homeRuns',
-                 'rbi', 'baseOnBalls', 'strikeOuts', 'avg', 'obp', 'slg']
-
-    for stat_key in key_stats:
-        if stat_key in stats:
-            value = stats[stat_key]
-            text += f"  {stat_key}: {value}\n"
-
-    return text
-
-def format_pitching_stats(stats):
-    """Format pitching stats"""
-    text = ""
-    key_stats = ['gamesPlayed', 'inningsPitched', 'wins', 'losses', 'era', 'strikeOuts',
-                 'walks', 'hits', 'homeRuns', 'completeGames', 'shutouts']
-
-    for stat_key in key_stats:
-        if stat_key in stats:
-            value = stats[stat_key]
-            text += f"  {stat_key}: {value}\n"
-
-    return text
 
 def send_email(subject, body):
     """Send email with stats"""
@@ -127,17 +101,18 @@ def main():
     yesterday = get_yesterday_date()
     print(f"Fetching baseball stats for {yesterday}...")
 
+    stats_body = ""
+
     # Fetch stats for both players
-    ohtani_stats = get_player_stats("Shohei Ohtani")
-    judge_stats = get_player_stats("Aaron Judge")
+    for player_name, player_id in PLAYER_IDS.items():
+        stats = get_player_stats_for_date(player_name, player_id, yesterday)
+        stats_body += stats + "\n"
 
     # Compose email
     subject = f"Baseball Stats for {yesterday}"
     body = f"""Baseball Stats for {yesterday}
 
-{ohtani_stats}
-
-{judge_stats}
+{stats_body}
 
 Data from MLB StatsAPI
 """
