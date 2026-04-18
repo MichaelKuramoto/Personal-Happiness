@@ -7,10 +7,22 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
 import sys
+import time
 
 SENDER_EMAIL = os.environ.get('BASEBALL_STATS_SENDER_EMAIL')
 SENDER_PASSWORD = os.environ.get('BASEBALL_STATS_SENDER_PASSWORD')
 RECIPIENT_EMAIL = os.environ.get('BASEBALL_STATS_RECIPIENT_EMAIL')
+
+# Better headers to avoid 403 blocking
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Referer': 'https://www.baseball-reference.com/',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+}
 
 def get_yesterday_date():
     """Get yesterday's date in YYYY-MM-DD format"""
@@ -18,38 +30,42 @@ def get_yesterday_date():
     return yesterday.strftime('%Y-%m-%d')
 
 def scrape_player_stats(player_name):
-    """Scrape Baseball-Reference for player stats"""
+    """Scrape Baseball-Reference for player stats with retries"""
     try:
-        # Search for player on Baseball-Reference
         search_url = f"https://www.baseball-reference.com/search/search.fcgi?search={player_name}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
 
-        response = requests.get(search_url, headers=headers, timeout=10)
-        response.raise_for_status()
+        # Retry logic for 403 errors
+        for attempt in range(3):
+            try:
+                response = requests.get(search_url, headers=HEADERS, timeout=10)
+                if response.status_code == 403:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                response.raise_for_status()
+                break
+            except requests.exceptions.RequestException as e:
+                if attempt == 2:
+                    raise
 
         soup = BeautifulSoup(response.content, 'html.parser')
-
-        # Find player link
         player_link = soup.find('a', href=lambda x: x and '/players/' in x)
 
         if not player_link:
             return f"Could not find {player_name} on Baseball-Reference"
 
-        # Get player page
+        time.sleep(1)  # Be polite to the server
+
         player_url = f"https://www.baseball-reference.com{player_link['href']}"
-        player_response = requests.get(player_url, headers=headers, timeout=10)
+        player_response = requests.get(player_url, headers=HEADERS, timeout=10)
         player_response.raise_for_status()
 
         player_soup = BeautifulSoup(player_response.content, 'html.parser')
-
-        # Extract relevant stats
         stats = extract_stats(player_soup, player_name)
         return stats
 
     except Exception as e:
-        return f"Error fetching {player_name} stats: {str(e)}"
+        return f"Could not fetch {player_name} stats: {str(e)}"
 
 def extract_stats(soup, player_name):
     """Extract batting and pitching stats from player page"""
