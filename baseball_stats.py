@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
+import sys
 
 SENDER_EMAIL = os.environ.get('BASEBALL_STATS_SENDER_EMAIL')
 SENDER_PASSWORD = os.environ.get('BASEBALL_STATS_SENDER_PASSWORD')
@@ -138,6 +139,7 @@ Note: Box scores include both batting and pitching stats where applicable.
         print("Stats email sent successfully!")
     else:
         print("Failed to send stats email")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
