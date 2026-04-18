@@ -1,0 +1,32 @@
+name: Daily Baseball Stats
+
+on:
+  schedule:
+    # Runs at 1pm UTC daily (5am PST / 6am PDT)
+    - cron: '0 13 * * *'
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  fetch-and-email-stats:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run baseball stats script
+        env:
+          BASEBALL_STATS_SENDER_EMAIL: ${{ secrets.BASEBALL_STATS_SENDER_EMAIL }}
+          BASEBALL_STATS_SENDER_PASSWORD: ${{ secrets.BASEBALL_STATS_SENDER_PASSWORD }}
+          BASEBALL_STATS_RECIPIENT_EMAIL: ${{ secrets.BASEBALL_STATS_RECIPIENT_EMAIL }}
+        run: |
+          python baseball_stats.py

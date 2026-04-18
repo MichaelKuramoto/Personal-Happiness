@@ -1,0 +1,6 @@
+{
+  "env": {
+    "BASEBALL_STATS_TIMEZONE": "PST",
+    "BASEBALL_STATS_SCHEDULE_HOUR": "5"
+  }
+}
